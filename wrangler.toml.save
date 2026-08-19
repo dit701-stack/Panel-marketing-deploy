@@ -1,9 +1,0 @@
-name = "panel-marketing"
-compatibility_date = "2024-09-23"
-pages_build_output_dir = "public"
-
-# After running `wrangler kv namespace create PANEL_KV`, paste the returned
-# id below. See README.md for the full step-by-step.
-[[kv_namespaces]]
-binding = "PANEL_KV"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID
