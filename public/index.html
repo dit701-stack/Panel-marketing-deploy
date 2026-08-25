@@ -197,17 +197,20 @@
   /* ---------- board ---------- */
   .pm-board{
     display:grid;
-    grid-template-columns:repeat(4,1fr);
-    gap:16px;
+    grid-template-columns:repeat(5,1fr);
+    gap:14px;
     align-items:start;
   }
-  @media (max-width:900px){ .pm-board{grid-template-columns:1fr;} }
+  @media (max-width:1150px){ .pm-board{grid-template-columns:repeat(3,1fr);} }
+  @media (max-width:700px){ .pm-board{grid-template-columns:1fr;} }
   .pm-col{
     background:rgba(28,32,50,0.03);
     border-radius:14px;
     padding:14px;
     min-height:120px;
+    transition:background .12s ease;
   }
+  .pm-col.drag-over{ background:rgba(229,25,127,0.07); box-shadow:0 0 0 2px var(--accent) inset; }
   .pm-col-head{
     display:flex; align-items:center; justify-content:space-between;
     margin-bottom:12px;
@@ -239,6 +242,9 @@
     transition:box-shadow .12s ease, transform .12s ease;
   }
   .pm-card:hover{ box-shadow:0 8px 20px rgba(28,32,50,0.10); transform:translateY(-1px); }
+  .pm-card.dragging{ opacity:0.4; }
+  .pm-card{ cursor:grab; }
+  .pm-card:active{ cursor:grabbing; }
   .pm-card-top{ display:flex; justify-content:space-between; gap:8px; margin-bottom:6px;}
   .pm-card-title{ font-weight:600; font-size:13.5px; line-height:1.35;}
   .pm-prio{
@@ -507,8 +513,9 @@
   var STATUSES = [
     {id:'pendiente', label:'Por hacer', hex:'#B9BCC9', order:0},
     {id:'proceso', label:'En proceso', hex:'#2D5BFF', order:1},
-    {id:'revision', label:'En revisión', hex:'#F2994A', order:2},
-    {id:'terminado', label:'Terminado', hex:'#00A896', order:3},
+    {id:'seguimiento', label:'Seguimiento', hex:'#8B5CF6', order:2},
+    {id:'revision', label:'En revisión', hex:'#F2994A', order:3},
+    {id:'terminado', label:'Terminado', hex:'#00A896', order:4},
   ];
 
   var STORAGE_KEY = 'tasks-v1';
@@ -550,6 +557,14 @@
     if(!t.due || t.status==='terminado') return false;
     var today = new Date(); today.setHours(0,0,0,0);
     return new Date(t.due+'T00:00:00') < today;
+  }
+  // Auto-tracks real work dates: the day work actually started (first time
+  // entering "En proceso") and the day it actually wrapped (first time
+  // reaching "En revisión" or "Terminado"). Only sets each once.
+  function stampStatusTimestamps(task, newStatus){
+    var today = toISODate(new Date());
+    if(newStatus==='proceso' && !task.actualStart){ task.actualStart = today; }
+    if((newStatus==='revision' || newStatus==='terminado') && !task.actualEnd){ task.actualEnd = today; }
   }
   function showToast(msg){
     state.toast = msg;
@@ -618,11 +633,11 @@
     var today = new Date();
     function addDays(n){ var d=new Date(today); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
     return [
-      {id:uid(), title:'Campaña de retargeting Q3', desc:'Configurar públicos y presupuesto diario en Meta Ads.', assignee:'cc', status:'proceso', priority:'alta', start:addDays(-1), due:addDays(2), estDuration:6},
+      {id:uid(), title:'Campaña de retargeting Q3', desc:'Configurar públicos y presupuesto diario en Meta Ads.', assignee:'cc', status:'proceso', priority:'alta', start:addDays(-1), due:addDays(2), estDuration:6, actualStart:addDays(-1)},
       {id:uid(), title:'Guion para reel de producto', desc:'Guion de 30s para el lanzamiento de la línea nueva.', assignee:'cf', status:'pendiente', priority:'media', start:addDays(3), due:addDays(5), estDuration:3},
-      {id:uid(), title:'Grabación testimonios clientes', desc:'Coordinar locación y equipo de cámara.', assignee:'ac', status:'revision', priority:'alta', start:addDays(-3), due:addDays(1), estDuration:5},
-      {id:uid(), title:'Flujo de bienvenida por WhatsApp', desc:'Automatizar secuencia de 4 mensajes post-registro.', assignee:'db', status:'proceso', priority:'media', start:addDays(0), due:addDays(4), estDuration:4},
-      {id:uid(), title:'Reporte mensual de rendimiento', desc:'Consolidar métricas de todas las cuentas activas.', assignee:'cc', status:'terminado', priority:'baja', start:addDays(-6), due:addDays(-1), estDuration:6},
+      {id:uid(), title:'Grabación testimonios clientes', desc:'Coordinar locación y equipo de cámara.', assignee:'ac', status:'seguimiento', priority:'alta', start:addDays(-3), due:addDays(1), estDuration:5, actualStart:addDays(-3)},
+      {id:uid(), title:'Flujo de bienvenida por WhatsApp', desc:'Automatizar secuencia de 4 mensajes post-registro.', assignee:'db', status:'proceso', priority:'media', start:addDays(0), due:addDays(4), estDuration:4, actualStart:addDays(0)},
+      {id:uid(), title:'Reporte mensual de rendimiento', desc:'Consolidar métricas de todas las cuentas activas.', assignee:'cc', status:'terminado', priority:'baja', start:addDays(-6), due:addDays(-1), estDuration:6, actualStart:addDays(-6), actualEnd:addDays(-2)},
       {id:uid(), title:'Moodboard campaña navideña', desc:'', assignee:'cf', status:'proceso', priority:'baja', start:addDays(6), due:addDays(9), estDuration:3},
     ];
   }
@@ -712,7 +727,7 @@
     var alert = timeAlertInfo(t);
     var risk = planRisk(t);
     return ''+
-      '<div class="pm-card" style="--card-color:'+p.hex+'" data-open-task="'+t.id+'">'+
+      '<div class="pm-card" style="--card-color:'+p.hex+'" data-open-task="'+t.id+'" draggable="true" data-drag-card="'+t.id+'">'+
         '<div class="pm-card-top">'+
           '<div class="pm-card-title">'+esc(t.title)+'</div>'+
           '<div class="pm-prio '+t.priority+'">'+t.priority+'</div>'+
@@ -724,6 +739,7 @@
           '<div class="pm-card-person"><div class="pm-mini-avatar" style="background:'+p.hex+'">'+p.initials+'</div>'+p.name.split(' ')[0]+'</div>'+
           '<div style="display:flex;align-items:center;gap:8px;">'+
             (t.attachments && t.attachments.length ? '<div class="pm-card-attach">📎 '+t.attachments.length+'</div>' : '')+
+            (t.actualStart ? '<div class="pm-card-attach" title="Empezó a trabajarse el '+fmtDate(t.actualStart)+'">🟢 '+fmtDate(t.actualStart)+'</div>' : '')+
             (t.estDuration ? '<div class="pm-card-attach">est. '+t.estDuration+'d</div>' : (dur ? '<div class="pm-card-attach">'+dur+'d</div>' : ''))+
             (t.due ? '<div class="pm-due '+(overdue?'overdue':'')+'">'+(overdue?'⚠ ':'')+fmtDate(t.due)+'</div>' : '')+
           '</div>'+
@@ -763,7 +779,7 @@
     return '<div class="pm-board">'+ STATUSES.map(function(s){
       var col = tasks.filter(function(t){return t.status===s.id;});
       return ''+
-        '<div class="pm-col">'+
+        '<div class="pm-col" data-drop-status="'+s.id+'">'+
           '<div class="pm-col-head">'+
             '<div class="pm-col-title"><span class="dot" style="background:'+s.hex+'"></span>'+s.label+'</div>'+
             '<div class="pm-col-count">'+col.length+'</div>'+
@@ -986,6 +1002,21 @@
     }).join('');
   }
 
+  function renderRealDatesInfo(t){
+    if(!t.actualStart && !t.actualEnd) return '';
+    var parts = [];
+    if(t.actualStart) parts.push('🟢 Empezó a trabajarse: <strong>'+fmtDate(t.actualStart)+'</strong>');
+    if(t.actualEnd) parts.push('🏁 Se terminó: <strong>'+fmtDate(t.actualEnd)+'</strong>');
+    else if(t.actualStart) parts.push('<span style="opacity:0.7;">aún en curso</span>');
+    var realDur = (t.actualStart && t.actualEnd) ? (Math.round((new Date(t.actualEnd+'T00:00:00')-new Date(t.actualStart+'T00:00:00'))/86400000)+1) : null;
+    return ''+
+      '<div style="background:rgba(45,91,255,0.06);border-radius:9px;padding:9px 12px;margin:-4px 0 14px;font-size:12px;color:var(--ink);">'+
+        parts.join(' &nbsp;·&nbsp; ')+
+        (realDur ? ' &nbsp;·&nbsp; <strong>'+realDur+' día'+(realDur===1?'':'s')+' reales</strong>' : '')+
+        '<div style="color:var(--ink-soft);font-weight:500;margin-top:2px;">Estas fechas se registran solas cuando la tarea pasa a "En proceso" y cuando llega a "En revisión" o "Terminado".</div>'+
+      '</div>';
+  }
+
   function renderExecTimeInfo(t){
     if(!t.start) return '';
     var alert = timeAlertInfo(t);
@@ -1049,6 +1080,7 @@
             '<input type="date" id="pm-f-due" value="'+(t.due||'')+'">'+
             '<div class="hint" style="margin-top:5px;">El líder define esta fecha; puede ser independiente de la duración que estime el colaborador.</div>'+
           '</div>'+
+          (editing ? renderRealDatesInfo(t) : '')+
           (editing ? renderExecTimeInfo(t) : '')+
           (editing ? renderPlanRiskInfo(t) : '')+
           '<div class="pm-field">'+
@@ -1234,6 +1266,43 @@
       el.addEventListener('click', function(){ state.modalOpen=false; state.editingTask=null; render(); });
     });
 
+    // Drag and drop: move a task to a new status by dragging its card onto a column.
+    var dragTaskId = null;
+    app.querySelectorAll('[data-drag-card]').forEach(function(card){
+      card.addEventListener('dragstart', function(e){
+        dragTaskId = card.getAttribute('data-drag-card');
+        card.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        try{ e.dataTransfer.setData('text/plain', dragTaskId); }catch(err){}
+      });
+      card.addEventListener('dragend', function(){
+        card.classList.remove('dragging');
+        dragTaskId = null;
+      });
+    });
+    app.querySelectorAll('[data-drop-status]').forEach(function(col){
+      col.addEventListener('dragover', function(e){
+        e.preventDefault();
+        col.classList.add('drag-over');
+      });
+      col.addEventListener('dragleave', function(){
+        col.classList.remove('drag-over');
+      });
+      col.addEventListener('drop', function(e){
+        e.preventDefault();
+        col.classList.remove('drag-over');
+        var id = dragTaskId || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
+        var newStatus = col.getAttribute('data-drop-status');
+        var task = state.tasks.find(function(t){ return t.id===id; });
+        if(task && task.status !== newStatus){
+          stampStatusTimestamps(task, newStatus);
+          task.status = newStatus;
+          render();
+          saveTasks();
+        }
+      });
+    });
+
     var openSettings = document.getElementById('pm-open-settings');
     if(openSettings) openSettings.addEventListener('click', function(){ state.settingsModalOpen = true; render(); });
 
@@ -1352,10 +1421,12 @@
           showToast('Ajustamos el orden de las fechas.');
         }
         if(state.editingTask){
+          stampStatusTimestamps(state.editingTask, data.status);
           Object.assign(state.editingTask, data);
           showToast('Tarea actualizada');
         } else {
           data.id = uid();
+          stampStatusTimestamps(data, data.status);
           state.tasks.push(data);
           showToast('Tarea creada');
         }
