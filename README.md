@@ -105,14 +105,63 @@ O desde el dashboard: tu proyecto → **Custom domains → Set up a domain**.
 npm run deploy
 ```
 
+## Notificaciones a Slack (resumen diario)
+
+`notifier/` es un **Worker aparte** (no una Pages Function) porque solo un
+Worker independiente puede tener un Cron Trigger. Corre entre semana a las
+8:00am hora de Costa Rica y lee la misma base de tareas del panel; si hay
+tareas atrasadas, marcadas como "requiere ajustes", o que vencen al día
+siguiente, publica un resumen en un canal de Slack. Si no hay nada que
+reportar, no envía nada.
+
+```bash
+cd notifier
+
+# 1. Crea un "Incoming Webhook" en tu workspace de Slack:
+#    https://api.slack.com/apps → Create New App → From scratch →
+#    Incoming Webhooks → actívalo → Add New Webhook to Workspace →
+#    elige el canal → copia la URL.
+
+# 2. Guarda esa URL como secreto (nunca la pongas en el código):
+npx wrangler secret put SLACK_WEBHOOK_URL
+
+# 3. Despliega el worker
+npx wrangler deploy
+```
+
+Para probarlo sin esperar al horario programado, ve a **dash.cloudflare.com
+→ Workers & Pages → panel-marketing-notifier → Settings → Trigger Events**
+(o Cron Triggers) y dispara una ejecución manual. El horario está en
+`notifier/wrangler.toml` (`triggers.crons`) por si lo quieres cambiar.
+
+## Controlar quién puede entrar (Cloudflare Access)
+
+El link del panel hoy es abierto: cualquiera con la URL puede editar todo.
+Para restringirlo a tu equipo con Cloudflare Access (login sin contraseña,
+código de un solo uso por correo):
+
+1. **dash.cloudflare.com → Zero Trust** → si es la primera vez, elige un
+   nombre de equipo (team name) y el plan gratis.
+2. **Access → Applications → Add an application → Self-hosted**.
+3. Dominio: el de tu proyecto, ej. `panel-marketing-57v.pages.dev`
+   (o tu dominio propio si agregaste uno).
+4. Crea una política: **Include → Emails** y agrega las direcciones de tu
+   equipo autorizadas a entrar.
+5. Guarda. La próxima vez que alguien abra el link, Cloudflare le pedirá su
+   correo y un código de un solo uso antes de dejarlo ver el panel.
+
 ## Notas
 
 - Todo el contenido de `public/index.html` es una sola página (HTML + CSS +
   JS) — puedes editarlo directamente con cualquier editor de texto.
 - Las tareas y adjuntos se guardan en la misma base KV para todo el que abra
-  la URL: no hay login ni usuarios separados. Si más adelante quieren
-  restringir el acceso, se puede agregar Cloudflare Access (protección por
-  correo/dominio) desde el dashboard sin tocar el código.
+  la URL: no hay login real, solo el selector "¿Quién eres?" (se guarda en
+  el navegador de cada quien y sirve para firmar el historial y los
+  comentarios, no para restringir acceso). Para eso último ver la sección de
+  Cloudflare Access arriba.
+- Cada tarea guarda un historial de cambios (quién y qué cambió) y admite
+  comentarios, visibles al abrirla. Al eliminar una tarea hay ~6 segundos
+  para deshacerlo desde el aviso que aparece abajo.
 - Los archivos adjuntos se guardan como binario en un bucket de R2 (no en
   KV), con un límite de 100 MB por archivo definido en el código
   (`MAX_FILE_BYTES`) — es el máximo de tamaño de solicitud que aceptan

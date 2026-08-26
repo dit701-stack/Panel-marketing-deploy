@@ -472,6 +472,75 @@
     position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
     background:var(--ink); color:#fff; padding:11px 20px; border-radius:100px; font-size:13px; font-weight:600;
     z-index:80; box-shadow:0 8px 24px rgba(0,0,0,0.2);
+    display:flex; align-items:center; gap:14px;
+  }
+  .pm-toast-action{
+    background:none; border:none; color:#fff; font-weight:700; font-size:13px; cursor:pointer;
+    text-decoration:underline; padding:0; font-family:'Inter',sans-serif;
+  }
+
+  /* ---------- identity ("¿Quién eres?") ---------- */
+  .pm-whoami{
+    display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink-soft); font-weight:600;
+    margin:-14px 0 20px; cursor:pointer; width:fit-content;
+  }
+  .pm-whoami:hover{ color:var(--ink); }
+  .pm-whoami strong{ color:var(--ink); }
+  .pm-identity-list{ display:flex; flex-direction:column; gap:8px; }
+  .pm-identity-opt{
+    display:flex; align-items:center; gap:10px; border:1.5px solid var(--line-strong); border-radius:10px;
+    padding:9px 12px; cursor:pointer; transition:border-color .12s ease, background .12s ease;
+  }
+  .pm-identity-opt:hover{ border-color:var(--accent); background:rgba(98,0,255,0.04); }
+
+  /* ---------- comments ---------- */
+  .pm-comment-list{ display:flex; flex-direction:column; gap:8px; max-height:220px; overflow-y:auto; margin-bottom:10px; }
+  .pm-comment{ background:var(--paper); border-radius:9px; padding:8px 11px; }
+  .pm-comment-head{ display:flex; justify-content:space-between; gap:8px; margin-bottom:3px; }
+  .pm-comment-head .who{ font-size:12px; font-weight:700; }
+  .pm-comment-head .when{ font-size:10.5px; color:var(--ink-soft); font-family:'JetBrains Mono',monospace; }
+  .pm-comment-text{ font-size:12.5px; line-height:1.4; white-space:pre-wrap; }
+  .pm-comment-add{ display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+  .pm-comment-add textarea{
+    width:100%; border:1px solid var(--line-strong); border-radius:9px; padding:9px 11px; min-height:56px;
+    font-family:'Inter',sans-serif; font-size:13px; background:var(--paper); color:var(--ink); resize:vertical;
+  }
+  .pm-hist-empty{ font-size:12px; color:var(--ink-soft); font-style:italic; }
+
+  /* ---------- history ---------- */
+  .pm-hist{ margin-top:4px; margin-bottom:14px; }
+  .pm-hist summary{
+    cursor:pointer; font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+    color:var(--ink-soft);
+  }
+  .pm-hist-list{ margin-top:10px; display:flex; flex-direction:column; gap:7px; }
+  .pm-hist-row{ font-size:12px; line-height:1.4; }
+  .pm-hist-row .who{ font-weight:700; }
+  .pm-hist-row .when{ color:var(--ink-soft); font-size:10.5px; font-family:'JetBrains Mono',monospace; margin-left:5px; }
+
+  /* ---------- drag-to-reorder indicator ---------- */
+  .pm-card.drop-before{ box-shadow:0 -3px 0 0 var(--accent) inset; }
+  .pm-card.drop-after{ box-shadow:0 3px 0 0 var(--accent) inset; }
+
+  /* ---------- mobile ---------- */
+  @media (max-width:640px){
+    #panel-root{ padding:16px 12px 60px; }
+    .pm-header{ flex-direction:column; align-items:flex-start; gap:14px; }
+    .pm-header-brand{ gap:12px; }
+    .pm-logo{ height:36px; }
+    .pm-header h1{ font-size:24px; }
+    .pm-stats{ flex-wrap:wrap; gap:14px 18px; width:100%; }
+    .pm-stat{ text-align:left; }
+    .pm-toolbar{ flex-direction:column; align-items:stretch; }
+    .pm-filters{ width:100%; }
+    .pm-search{ flex:1; min-width:0; }
+    .pm-actions{ width:100%; justify-content:space-between; }
+    .pm-view-toggle{ flex:1; }
+    .pm-view-toggle button{ flex:1; padding:9px 6px; font-size:12px; }
+    .pm-modal{ max-width:100%; width:100%; border-radius:14px 14px 0 0; align-self:flex-end; }
+    .pm-overlay{ align-items:flex-end; padding:0; }
+    .pm-row2{ grid-template-columns:1fr; }
+    table.pm-matrix-table th:first-child{ width:150px; }
   }
 </style>
 </head>
@@ -550,6 +619,8 @@
     settingsModalOpen: false,
     pendingNeedsChanges: false,
     pendingChangesNotes: '',
+    currentUser: null, // id of the TEAM member using this browser (see "Soy..." picker)
+    identityPickerOpen: false,
   };
 
   function uid(){ return 't' + Math.random().toString(36).slice(2,10); }
@@ -579,10 +650,82 @@
     if(newStatus==='proceso' && !task.actualStart){ task.actualStart = today; }
     if((newStatus==='revision' || newStatus==='terminado') && !task.actualEnd){ task.actualEnd = today; }
   }
-  function showToast(msg){
+  var toastSeq = 0;
+  function showToast(msg, opts){
+    opts = opts || {};
+    var myId = ++toastSeq;
     state.toast = msg;
+    state.toastActionLabel = opts.actionLabel || null;
+    state.toastAction = opts.onAction || null;
+    state.toastId = myId;
     render();
-    setTimeout(function(){ state.toast = null; render(); }, 2200);
+    setTimeout(function(){
+      if(state.toastId === myId){ state.toast = null; state.toastActionLabel = null; state.toastAction = null; render(); }
+    }, opts.duration || 2200);
+  }
+  var CURRENT_USER_KEY = 'pm-current-user';
+  function loadCurrentUser(){
+    try{
+      var id = window.localStorage.getItem(CURRENT_USER_KEY);
+      state.currentUser = personOf(id) ? id : null;
+    }catch(e){ state.currentUser = null; }
+  }
+  function setCurrentUser(id){
+    state.currentUser = id;
+    state.identityPickerOpen = false;
+    try{ window.localStorage.setItem(CURRENT_USER_KEY, id); }catch(e){}
+  }
+  function currentUserName(){
+    var p = personOf(state.currentUser);
+    return p ? p.name.split(' ')[0] : 'Alguien';
+  }
+  function fmtDateTime(iso){
+    try{
+      var d = new Date(iso);
+      var datePart = fmtDate(toISODate(d));
+      var h = d.getHours(), m = d.getMinutes();
+      var ampm = h>=12 ? 'p.m.' : 'a.m.';
+      var h12 = h % 12; if(h12===0) h12 = 12;
+      var mm = (m<10?'0':'')+m;
+      return datePart + ', ' + h12 + ':' + mm + ' ' + ampm;
+    }catch(e){ return ''; }
+  }
+  // Builds a human-readable list of what changed between two versions of a
+  // task, used to write one history entry per save instead of one per field.
+  function diffTask(before, after){
+    var changes = [];
+    var fieldLabels = {title:'título', desc:'descripción', due:'fecha límite', start:'inicio', estDuration:'duración estimada'};
+    ['title','desc','start','due','estDuration'].forEach(function(k){
+      var a = before[k] || '', b = after[k] || '';
+      if(String(a) !== String(b)){
+        if(k==='start' || k==='due'){
+          changes.push('Actualizó '+fieldLabels[k]+' a '+(b?fmtDate(b):'sin fecha'));
+        } else {
+          changes.push('Editó '+fieldLabels[k]);
+        }
+      }
+    });
+    if(before.assignee !== after.assignee){
+      var fromP = personOf(before.assignee), toP = personOf(after.assignee);
+      changes.push('Reasignó de '+(fromP?fromP.name.split(' ')[0]:'—')+' a '+(toP?toP.name.split(' ')[0]:'—'));
+    }
+    if(before.status !== after.status){
+      var fromS = statusOf(before.status), toS = statusOf(after.status);
+      changes.push('Cambió estado de "'+(fromS?fromS.label:'—')+'" a "'+(toS?toS.label:'—')+'"');
+    }
+    if(before.priority !== after.priority){
+      changes.push('Cambió prioridad de '+before.priority+' a '+after.priority);
+    }
+    if(!!before.needsChanges !== !!after.needsChanges){
+      changes.push(after.needsChanges ? 'Marcó que requiere ajustes' : 'Resolvió el requerimiento de ajustes');
+    }
+    var beforeIds = (before.attachments||[]).map(function(a){return a.id;});
+    var afterAtts = after.attachments||[];
+    afterAtts.forEach(function(a){ if(beforeIds.indexOf(a.id)===-1) changes.push('Adjuntó "'+a.name+'"'); });
+    (before.attachments||[]).forEach(function(a){
+      if(!afterAtts.some(function(x){return x.id===a.id;})) changes.push('Quitó el adjunto "'+a.name+'"');
+    });
+    return changes;
   }
   function fmtBytes(n){
     if(n < 1024) return n + ' B';
@@ -610,6 +753,7 @@
 
   // ---------- storage ----------
   async function init(){
+    loadCurrentUser();
     await Promise.all([loadTasks(), loadSettings()]);
     state.loaded = true;
     render();
@@ -1063,6 +1207,40 @@
       '</div>';
   }
 
+  function renderComments(t){
+    var comments = t.comments || [];
+    var list = comments.length ? comments.map(function(c){
+      return ''+
+        '<div class="pm-comment">'+
+          '<div class="pm-comment-head"><span class="who">'+esc(c.author)+'</span><span class="when">'+fmtDateTime(c.ts)+'</span></div>'+
+          '<div class="pm-comment-text">'+esc(c.text)+'</div>'+
+        '</div>';
+    }).join('') : '<div class="pm-hist-empty">Sin comentarios todavía.</div>';
+    var draftComment = (state.modalDraft && state.modalDraft.newComment) || '';
+    return ''+
+      '<div class="pm-field">'+
+        '<label>Comentarios'+(comments.length?' ('+comments.length+')':'')+'</label>'+
+        '<div class="pm-comment-list">'+list+'</div>'+
+        '<div class="pm-comment-add">'+
+          '<textarea id="pm-f-newcomment" placeholder="Escribe un comentario...">'+esc(draftComment)+'</textarea>'+
+          '<button type="button" class="pm-btn ghost" id="pm-add-comment">Comentar</button>'+
+        '</div>'+
+      '</div>';
+  }
+
+  function renderHistory(t){
+    var hist = (t.history || []).slice().reverse();
+    if(!hist.length) return '';
+    var rows = hist.map(function(h){
+      return '<div class="pm-hist-row"><span class="who">'+esc(h.actor)+'</span> '+esc(h.detail)+'<span class="when">'+fmtDateTime(h.ts)+'</span></div>';
+    }).join('');
+    return ''+
+      '<details class="pm-hist">'+
+        '<summary>Historial ('+hist.length+')</summary>'+
+        '<div class="pm-hist-list">'+rows+'</div>'+
+      '</details>';
+  }
+
   function renderModal(){
     if(!state.modalOpen) return '';
     var editing = state.editingTask;
@@ -1115,6 +1293,8 @@
             '<input type="file" id="pm-f-file" multiple style="display:none">'+
             '<div class="pm-attach-list" id="pm-attach-list">'+ renderAttachList() +'</div>'+
           '</div>'+
+          (editing ? renderComments(editing) : '')+
+          (editing ? renderHistory(editing) : '')+
           '<div class="pm-modal-actions">'+
             (editing ? '<button class="pm-btn ghost" id="pm-delete" style="color:var(--danger);border-color:var(--danger);">Eliminar</button>' : '<span></span>')+
             '<div style="display:flex;gap:8px;">'+
@@ -1150,6 +1330,29 @@
       '</div>';
   }
 
+  function renderIdentityPicker(){
+    if(!state.identityPickerOpen && state.currentUser) return '';
+    var closable = !!state.currentUser; // first-time pick can't be dismissed without choosing
+    return ''+
+      '<div class="pm-overlay" '+(closable ? 'data-close-identity="1"' : '')+'>'+
+        '<div class="pm-modal" style="max-width:380px;" onclick="event.stopPropagation()">'+
+          '<h3>¿Quién eres?</h3>'+
+          '<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:16px;line-height:1.5;">'+
+            'Elige tu nombre para que tus cambios, comentarios y actividad queden identificados. Se recuerda en este navegador.'+
+          '</div>'+
+          '<div class="pm-identity-list">'+
+            TEAM.map(function(p){
+              return '<div class="pm-identity-opt" data-pick-identity="'+p.id+'">'+
+                '<div class="pm-mini-avatar" style="background:'+p.hex+';width:32px;height:32px;font-size:12px;">'+p.initials+'</div>'+
+                '<div><div style="font-weight:600;font-size:13.5px;">'+p.name+'</div><div style="font-size:11.5px;color:var(--ink-soft);">'+p.role+'</div></div>'+
+              '</div>';
+            }).join('')+
+          '</div>'+
+          (closable ? '<div class="pm-modal-actions"><span></span><button class="pm-btn ghost" data-close-identity="1">Cancelar</button></div>' : '')+
+        '</div>'+
+      '</div>';
+  }
+
   // Reads whatever the user has currently typed in the open task modal so a
   // re-render triggered mid-edit (attaching a file, toggling "needs changes")
   // doesn't wipe fields back to their opening values.
@@ -1166,6 +1369,7 @@
       start: document.getElementById('pm-f-start').value,
       due: document.getElementById('pm-f-due').value,
       estDuration: document.getElementById('pm-f-estdur').value,
+      newComment: (function(){ var el = document.getElementById('pm-f-newcomment'); return el ? el.value : ''; })(),
     };
   }
 
@@ -1202,6 +1406,13 @@
         '</div>'+
       '</div>'+
 
+      '<div class="pm-whoami" id="pm-whoami-toggle" title="Cambiar quién eres">'+
+        (state.currentUser ? (function(){
+          var p = personOf(state.currentUser);
+          return '<div class="pm-mini-avatar" style="background:'+p.hex+'">'+p.initials+'</div>Estás como <strong>'+p.name.split(' ')[0]+'</strong> · cambiar';
+        })() : 'Sin identificar · elegir quién eres')+
+      '</div>'+
+
       '<div class="pm-team-strip">'+renderTeamStrip()+'</div>'+
 
       '<div class="pm-toolbar">'+
@@ -1225,7 +1436,12 @@
       (state.view==='board' ? renderBoard() : state.view==='matrix' ? renderMatrix() : renderCalendar())+
       renderModal()+
       renderSettingsModal()+
-      (state.toast ? '<div class="pm-toast">'+esc(state.toast)+'</div>' : '');
+      renderIdentityPicker()+
+      (state.toast ? (
+        '<div class="pm-toast">'+esc(state.toast)+
+          (state.toastActionLabel ? '<button type="button" class="pm-toast-action" id="pm-toast-action">'+esc(state.toastActionLabel)+'</button>' : '')+
+        '</div>'
+      ) : '');
 
     app.innerHTML = html;
     bindEvents();
@@ -1261,6 +1477,30 @@
     app.querySelectorAll('[data-view]').forEach(function(el){
       el.addEventListener('click', function(){ state.view = el.getAttribute('data-view'); render(); });
     });
+
+    var whoamiToggle = document.getElementById('pm-whoami-toggle');
+    if(whoamiToggle) whoamiToggle.addEventListener('click', function(){ state.identityPickerOpen = true; render(); });
+
+    app.querySelectorAll('[data-pick-identity]').forEach(function(el){
+      el.addEventListener('click', function(){
+        setCurrentUser(el.getAttribute('data-pick-identity'));
+        render();
+      });
+    });
+
+    app.querySelectorAll('[data-close-identity]').forEach(function(el){
+      el.addEventListener('click', function(){ state.identityPickerOpen = false; render(); });
+    });
+
+    var toastActionBtn = document.getElementById('pm-toast-action');
+    if(toastActionBtn){
+      toastActionBtn.addEventListener('click', function(){
+        var action = state.toastAction;
+        state.toast = null; state.toastAction = null; state.toastActionLabel = null;
+        if(action) action();
+        else render();
+      });
+    }
 
     app.querySelectorAll('[data-cal-nav]').forEach(function(el){
       el.addEventListener('click', function(){
@@ -1315,8 +1555,15 @@
       el.addEventListener('click', function(){ state.modalOpen=false; state.editingTask=null; state.modalDraft=null; render(); });
     });
 
-    // Drag and drop: move a task to a new status by dragging its card onto a column.
+    // Drag and drop: move a task to a new status by dragging its card onto a
+    // column, and/or reorder it among its siblings by dropping it on top of
+    // another card (drops above/below that card depending on cursor position).
     var dragTaskId = null;
+    var hoverCardId = null;
+    var hoverBefore = true;
+    function clearHoverIndicators(){
+      app.querySelectorAll('.pm-card').forEach(function(c){ c.classList.remove('drop-before','drop-after'); });
+    }
     app.querySelectorAll('[data-drag-card]').forEach(function(card){
       card.addEventListener('dragstart', function(e){
         dragTaskId = card.getAttribute('data-drag-card');
@@ -1326,7 +1573,21 @@
       });
       card.addEventListener('dragend', function(){
         card.classList.remove('dragging');
-        dragTaskId = null;
+        clearHoverIndicators();
+        dragTaskId = null; hoverCardId = null;
+      });
+      card.addEventListener('dragover', function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        var id = card.getAttribute('data-drag-card');
+        if(id === dragTaskId) return;
+        var rect = card.getBoundingClientRect();
+        var before = (e.clientY - rect.top) < rect.height/2;
+        hoverCardId = id; hoverBefore = before;
+        clearHoverIndicators();
+        card.classList.add(before ? 'drop-before' : 'drop-after');
+        var col = card.closest('[data-drop-status]');
+        if(col) col.classList.add('drag-over');
       });
     });
     app.querySelectorAll('[data-drop-status]').forEach(function(col){
@@ -1334,21 +1595,41 @@
         e.preventDefault();
         col.classList.add('drag-over');
       });
-      col.addEventListener('dragleave', function(){
-        col.classList.remove('drag-over');
+      col.addEventListener('dragleave', function(e){
+        if(!col.contains(e.relatedTarget)) col.classList.remove('drag-over');
       });
       col.addEventListener('drop', function(e){
         e.preventDefault();
         col.classList.remove('drag-over');
+        clearHoverIndicators();
         var id = dragTaskId || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
         var newStatus = col.getAttribute('data-drop-status');
         var task = state.tasks.find(function(t){ return t.id===id; });
-        if(task && task.status !== newStatus){
+        if(!task) return;
+
+        if(task.status !== newStatus){
+          var fromLabel = statusOf(task.status).label;
           stampStatusTimestamps(task, newStatus);
           task.status = newStatus;
-          render();
-          saveTasks();
+          task.history = task.history || [];
+          task.history.push({ts:new Date().toISOString(), actor:currentUserName(), detail:'Movió de "'+fromLabel+'" a "'+statusOf(newStatus).label+'" (arrastrar)'});
         }
+
+        // reposition within state.tasks so column order reflects where it was dropped
+        var fromIdx = state.tasks.indexOf(task);
+        state.tasks.splice(fromIdx, 1);
+        var targetIdx = (hoverCardId && hoverCardId !== id) ? state.tasks.findIndex(function(t){ return t.id === hoverCardId; }) : -1;
+        if(targetIdx === -1){
+          var lastIdx = -1;
+          state.tasks.forEach(function(t, i){ if(t.status === newStatus) lastIdx = i; });
+          state.tasks.splice(lastIdx === -1 ? state.tasks.length : lastIdx + 1, 0, task);
+        } else {
+          state.tasks.splice(hoverBefore ? targetIdx : targetIdx + 1, 0, task);
+        }
+
+        hoverCardId = null;
+        render();
+        saveTasks();
       });
     });
 
@@ -1438,6 +1719,20 @@
       });
     });
 
+    var addCommentBtn = document.getElementById('pm-add-comment');
+    if(addCommentBtn){
+      addCommentBtn.addEventListener('click', function(){
+        var ta = document.getElementById('pm-f-newcomment');
+        var text = ta.value.trim();
+        if(!text || !state.editingTask) return;
+        state.editingTask.comments = state.editingTask.comments || [];
+        state.editingTask.comments.push({id:uid(), author:currentUserName(), text:text, ts:new Date().toISOString()});
+        ta.value = '';
+        saveTasks();
+        render();
+      });
+    }
+
     var saveBtn = document.getElementById('pm-save');
     if(saveBtn){
       saveBtn.addEventListener('click', async function(){
@@ -1484,11 +1779,18 @@
           showToast('Ajustamos el orden de las fechas.');
         }
         if(state.editingTask){
+          var before = Object.assign({}, state.editingTask, {attachments: (state.editingTask.attachments||[]).slice()});
           stampStatusTimestamps(state.editingTask, data.status);
           Object.assign(state.editingTask, data);
+          var changes = diffTask(before, state.editingTask);
+          if(changes.length){
+            state.editingTask.history = state.editingTask.history || [];
+            state.editingTask.history.push({ts:new Date().toISOString(), actor:currentUserName(), detail:changes.join(' · ')});
+          }
           showToast('Tarea actualizada');
         } else {
           data.id = uid();
+          data.history = [{ts:new Date().toISOString(), actor:currentUserName(), detail:'Tarea creada'}];
           stampStatusTimestamps(data, data.status);
           state.tasks.push(data);
           showToast('Tarea creada');
@@ -1502,19 +1804,35 @@
 
     var delBtn = document.getElementById('pm-delete');
     if(delBtn){
-      delBtn.addEventListener('click', async function(){
+      delBtn.addEventListener('click', function(){
         var toDelete = state.editingTask;
+        var restoreIdx = state.tasks.indexOf(toDelete);
         state.tasks = state.tasks.filter(function(t){return t.id!==toDelete.id;});
         state.modalOpen=false; state.editingTask=null; state.modalDraft=null;
         state.pendingAttachments=[]; state.removedAttachmentIds=[];
-        showToast('Tarea eliminada');
-        render();
         saveTasks();
-        // clean up its attachment blobs so storage doesn't accumulate orphans
-        var atts = toDelete.attachments || [];
-        for(var i=0;i<atts.length;i++){
-          try{ await fetch('/api/attachments/' + encodeURIComponent(atts[i].id), { method:'DELETE' }); }catch(e){}
-        }
+
+        // give the user a few seconds to undo before the attachment blobs
+        // are actually deleted from R2 (the task itself is already gone
+        // from state, so it disappears from the board immediately)
+        var commitTimeoutId = setTimeout(function(){
+          var atts = toDelete.attachments || [];
+          atts.forEach(function(a){
+            fetch('/api/attachments/' + encodeURIComponent(a.id), { method:'DELETE' }).catch(function(){});
+          });
+        }, 6000);
+
+        showToast('Tarea eliminada', {
+          actionLabel: 'Deshacer',
+          duration: 6000,
+          onAction: function(){
+            clearTimeout(commitTimeoutId);
+            state.tasks.splice(Math.min(restoreIdx, state.tasks.length), 0, toDelete);
+            saveTasks();
+            render();
+          }
+        });
+        render();
       });
     }
   }

@@ -1,0 +1,17 @@
+name = "panel-marketing-notifier"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+workers_dev = false
+
+# 8:00am Costa Rica time (UTC-6), Monday-Friday.
+[triggers]
+crons = ["0 14 * * 1-5"]
+
+# Same KV namespace the Pages project uses, so this worker reads the same
+# tasks the panel writes.
+[[kv_namespaces]]
+binding = "PANEL_KV"
+id = "f732393ea18e4ac4b243af32eeaa2f4a"
+
+# SLACK_WEBHOOK_URL is set as a secret, not here:
+#   npx wrangler secret put SLACK_WEBHOOK_URL
