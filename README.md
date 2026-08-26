@@ -15,7 +15,9 @@ Para que la app funcione en un dominio real, se agregó:
 - Un pequeño "polyfill" en `public/index.html` que redefine `window.storage`
   para hablar con tu propio backend (`/api/kv/...`) en vez del de Claude.
 - Dos Cloudflare Pages Functions en `functions/api/kv/` que leen y escriben
-  en una base de datos KV de Cloudflare.
+  en una base de datos KV de Cloudflare (guarda las tareas).
+- Una Cloudflare Pages Function en `functions/api/attachments/` que sube,
+  descarga y borra los archivos adjuntos en un bucket de Cloudflare R2.
 
 El resto del código (toda la lógica de tareas, calendario, alertas, etc.) es
 exactamente el mismo.
@@ -53,7 +55,12 @@ Copia ese `id` y pégalo en `wrangler.toml`, reemplazando
 `REPLACE_WITH_YOUR_KV_NAMESPACE_ID`.
 
 ```bash
-# 5. Despliega
+# 5. Habilita R2 una vez desde el dashboard (dash.cloudflare.com → R2 →
+#    "Enable R2" / "Purchase R2 Plan"; tiene capa gratuita). Luego crea el
+#    bucket donde viven los archivos adjuntos:
+npx wrangler r2 bucket create panel-marketing-attachments
+
+# 6. Despliega
 npx wrangler pages deploy public --project-name=panel-marketing
 ```
 
@@ -77,7 +84,10 @@ tareas:
    `panel-marketing`.
 2. **Settings → Functions → KV namespace bindings**.
 3. Agrega: variable `PANEL_KV` → namespace `PANEL_KV` (el que creaste).
-4. Vuelve a desplegar: `npx wrangler pages deploy public --project-name=panel-marketing`.
+4. Si los adjuntos tampoco se guardan, revisa igual **Settings → Functions →
+   R2 bucket bindings**: variable `PANEL_ATTACHMENTS` → bucket
+   `panel-marketing-attachments`.
+5. Vuelve a desplegar: `npx wrangler pages deploy public --project-name=panel-marketing`.
 
 ## Usar tu propio dominio
 
@@ -103,6 +113,7 @@ npm run deploy
   la URL: no hay login ni usuarios separados. Si más adelante quieren
   restringir el acceso, se puede agregar Cloudflare Access (protección por
   correo/dominio) desde el dashboard sin tocar el código.
-- Los archivos adjuntos se guardan como texto (base64) en KV, con un límite
-  de ~3.2 MB por archivo definido en el código (`MAX_FILE_BYTES`). Cloudflare
-  KV admite valores de hasta 25 MB si necesitas subirlo.
+- Los archivos adjuntos se guardan como binario en un bucket de R2 (no en
+  KV), con un límite de 100 MB por archivo definido en el código
+  (`MAX_FILE_BYTES`) — es el máximo de tamaño de solicitud que aceptan
+  Cloudflare Workers/Pages Functions. R2 en sí admite objetos de hasta 5 TB.

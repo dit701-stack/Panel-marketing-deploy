@@ -8,3 +8,10 @@ pages_build_output_dir = "public"
 binding = "PANEL_KV"
 id = "f732393ea18e4ac4b243af32eeaa2f4a"
 
+# Stores the raw bytes of task attachments (KV only allows values up to
+# 25 MiB, and everything there is also base64-inflated ~33%; R2 objects
+# can go up to 5 TB and are stored as raw binary).
+[[r2_buckets]]
+binding = "PANEL_ATTACHMENTS"
+bucket_name = "panel-marketing-attachments"
+

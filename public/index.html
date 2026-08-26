@@ -530,7 +530,7 @@
 
   var STORAGE_KEY = 'tasks-v1';
   var SETTINGS_KEY = 'settings-v1';
-  var MAX_FILE_BYTES = 3.2 * 1024 * 1024; // keep base64'd size safely under the 5MB per-key storage limit
+  var MAX_FILE_BYTES = 100 * 1024 * 1024; // Workers/Pages Functions cap incoming requests at 100MB
   var DAY_W = 34; // px, must match .pm-gantt-day / .pm-gantt-cellbg width in CSS
 
   var state = {
@@ -543,7 +543,7 @@
     editingTask: null, // null = new
     modalDraft: null, // snapshot of in-progress form fields, survives re-renders while the modal is open
     toast: null,
-    pendingAttachments: [], // {id, name, size, type, dataUrl?, isNew}
+    pendingAttachments: [], // {id, name, size, type, file?, isNew}
     removedAttachmentIds: [],
     calendarMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
     settings: {alta:3, media:5, baja:8},
@@ -589,12 +589,14 @@
     if(n < 1024*1024) return Math.round(n/1024) + ' KB';
     return (n/(1024*1024)).toFixed(1) + ' MB';
   }
-  function readFileAsDataUrl(file){
-    return new Promise(function(resolve, reject){
-      var reader = new FileReader();
-      reader.onload = function(){ resolve(reader.result); };
-      reader.onerror = function(){ reject(new Error('No se pudo leer el archivo')); };
-      reader.readAsDataURL(file);
+  function uploadAttachment(a){
+    var url = '/api/attachments/' + encodeURIComponent(a.id) + '?name=' + encodeURIComponent(a.name);
+    return fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': a.type || 'application/octet-stream' },
+      body: a.file
+    }).then(function(res){
+      if(!res.ok) throw new Error('upload failed: ' + res.status);
     });
   }
   function triggerDownload(dataUrl, name){
@@ -1108,7 +1110,7 @@
             '<label>Adjuntos</label>'+
             '<div class="pm-dropzone" id="pm-dropzone">'+
               '📎 Haz clic para adjuntar archivos'+
-              '<div class="hint">Máx. ~3 MB por archivo</div>'+
+              '<div class="hint">Máx. 100 MB por archivo</div>'+
             '</div>'+
             '<input type="file" id="pm-f-file" multiple style="display:none">'+
             '<div class="pm-attach-list" id="pm-attach-list">'+ renderAttachList() +'</div>'+
@@ -1234,18 +1236,13 @@
     for(var i=0;i<files.length;i++){
       var f = files[i];
       if(f.size > MAX_FILE_BYTES){
-        showToast('"'+f.name+'" pesa demasiado (máx. ~3 MB).');
+        showToast('"'+f.name+'" pesa demasiado (máx. 100 MB).');
         continue;
       }
-      try{
-        var dataUrl = await readFileAsDataUrl(f);
-        state.pendingAttachments.push({
-          id: uid(), name: f.name, size: f.size, type: f.type, dataUrl: dataUrl, isNew: true
-        });
-        render();
-      }catch(e){
-        showToast('No se pudo leer "'+f.name+'".');
-      }
+      state.pendingAttachments.push({
+        id: uid(), name: f.name, size: f.size, type: f.type, file: f, isNew: true
+      });
+      render();
     }
   }
 
@@ -1427,16 +1424,16 @@
     });
 
     app.querySelectorAll('[data-download-attach]').forEach(function(el){
-      el.addEventListener('click', async function(){
+      el.addEventListener('click', function(){
         var id = el.getAttribute('data-download-attach');
         var pending = state.pendingAttachments.find(function(a){return a.id===id;});
         if(!pending) return;
-        if(pending.dataUrl){ triggerDownload(pending.dataUrl, pending.name); return; }
-        try{
-          var res = await window.storage.get('attachment:'+id, true);
-          if(res && res.value) triggerDownload(res.value, pending.name);
-        }catch(e){
-          showToast('No se pudo descargar el archivo.');
+        if(pending.file){
+          // not uploaded yet (still attached to the open, unsaved form): download straight from memory
+          triggerDownload(URL.createObjectURL(pending.file), pending.name);
+        } else {
+          // already saved: let the browser fetch it from R2 (server sets Content-Disposition)
+          triggerDownload('/api/attachments/' + encodeURIComponent(id), pending.name);
         }
       });
     });
@@ -1448,15 +1445,15 @@
         if(!title){ showToast('Ponle un título a la tarea.'); return; }
         saveBtn.disabled = true; saveBtn.textContent = 'Guardando…';
 
-        // persist any newly-added attachment contents to their own storage keys
+        // upload any newly-added attachment contents to R2
         var newOnes = state.pendingAttachments.filter(function(a){ return a.isNew; });
         try{
           for(var i=0;i<newOnes.length;i++){
-            await window.storage.set('attachment:'+newOnes[i].id, newOnes[i].dataUrl, true);
+            await uploadAttachment(newOnes[i]);
           }
           // clean up any attachments the user removed from an existing task
           for(var j=0;j<state.removedAttachmentIds.length;j++){
-            await window.storage.delete('attachment:'+state.removedAttachmentIds[j], true);
+            await fetch('/api/attachments/' + encodeURIComponent(state.removedAttachmentIds[j]), { method:'DELETE' });
           }
         }catch(e){
           showToast('Hubo un problema guardando los adjuntos.');
@@ -1516,7 +1513,7 @@
         // clean up its attachment blobs so storage doesn't accumulate orphans
         var atts = toDelete.attachments || [];
         for(var i=0;i<atts.length;i++){
-          try{ await window.storage.delete('attachment:'+atts[i].id, true); }catch(e){}
+          try{ await fetch('/api/attachments/' + encodeURIComponent(atts[i].id), { method:'DELETE' }); }catch(e){}
         }
       });
     }
