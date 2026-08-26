@@ -350,6 +350,12 @@
   .pm-field label .who{
     text-transform:none; font-weight:600; letter-spacing:0; color:var(--accent-ink); font-size:11px;
   }
+  .pm-checkbox-label{
+    display:flex !important; align-items:center; gap:8px; text-transform:none !important;
+    font-size:13.5px !important; font-weight:600 !important; color:var(--ink) !important;
+    cursor:pointer; letter-spacing:0 !important;
+  }
+  .pm-checkbox-label input[type=checkbox]{ width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
   .pm-field input[type=text], .pm-field textarea, .pm-field select, .pm-field input[type=date]{
     width:100%; border:1px solid var(--line-strong); border-radius:9px; padding:9px 11px;
     font-family:'Inter',sans-serif; font-size:13.5px; background:var(--paper); color:var(--ink);
@@ -394,6 +400,7 @@
   .pm-alert-badge.done{ background:rgba(28,32,50,0.06); color:var(--ink-soft); }
   .pm-alert-badge.pulse{ animation:pm-pulse 1.8s ease-in-out infinite; }
   .pm-alert-badge.risk{ background:rgba(242,153,74,0.16); color:#a15a1c; }
+  .pm-alert-badge.changes{ background:rgba(229,25,127,0.12); color:var(--accent-ink); }
   .pm-alert-badge + .pm-alert-badge{ margin-top:6px; }
   @keyframes pm-pulse{ 0%,100%{opacity:1;} 50%{opacity:0.55;} }
   .pm-gantt-bar.overrun{ box-shadow:0 0 0 2px var(--danger), 0 2px 5px rgba(0,0,0,0.12); }
@@ -537,6 +544,8 @@
     calendarMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
     settings: {alta:3, media:5, baja:8},
     settingsModalOpen: false,
+    pendingNeedsChanges: false,
+    pendingChangesNotes: '',
   };
 
   function uid(){ return 't' + Math.random().toString(36).slice(2,10); }
@@ -735,6 +744,7 @@
         (t.desc ? '<div class="pm-card-desc">'+esc(t.desc)+'</div>' : '')+
         (alert ? '<div class="pm-alert-badge '+(alert.finished?'done':'pulse')+'" title="Duró '+alert.elapsed+' días, se esperaban '+alert.threshold+'">⏱ '+alert.elapsed+'d de '+alert.threshold+'d '+(alert.finished?'(cerrada tarde)':'estimados')+'</div>' : '')+
         (risk ? '<div class="pm-alert-badge risk" title="La duración estimada por el colaborador termina '+risk.overBy+' día(s) después de la fecha límite del líder">⚠ estimado supera fecha límite por '+risk.overBy+'d</div>' : '')+
+        (t.needsChanges ? '<div class="pm-alert-badge changes" title="'+esc(t.changesNotes||'Requiere ajustes o cambios')+'">🔁 Requiere ajustes</div>' : '')+
         '<div class="pm-card-bottom">'+
           '<div class="pm-card-person"><div class="pm-mini-avatar" style="background:'+p.hex+'">'+p.initials+'</div>'+p.name.split(' ')[0]+'</div>'+
           '<div style="display:flex;align-items:center;gap:8px;">'+
@@ -795,7 +805,7 @@
         var items = tasksOf(p.id, s.id);
         var chips = items.map(function(t){
           var alert = timeAlertInfo(t);
-          return '<div class="pm-matrix-chip '+(alert?'overrun':'')+'" style="--chip-color:'+s.hex+'" data-open-task="'+t.id+'" title="'+(alert?('Lleva '+alert.elapsed+' días, se esperaban '+alert.threshold):'')+'">'+(alert?'<span class="alert-icon">⏱</span>':'')+esc(t.title)+'</div>';
+          return '<div class="pm-matrix-chip '+(alert?'overrun':'')+'" style="--chip-color:'+s.hex+'" data-open-task="'+t.id+'" title="'+(t.needsChanges?'Requiere ajustes. ':'')+(alert?('Lleva '+alert.elapsed+' días, se esperaban '+alert.threshold):'')+'">'+(t.needsChanges?'<span class="alert-icon">🔁</span>':'')+(alert?'<span class="alert-icon">⏱</span>':'')+esc(t.title)+'</div>';
         }).join('');
         return '<td>'+(items.length ? '<div class="pm-matrix-cell-chips">'+chips+'</div>' : '<span class="pm-matrix-empty">—</span>')+'</td>';
       }).join('');
@@ -1084,6 +1094,13 @@
           (editing ? renderExecTimeInfo(t) : '')+
           (editing ? renderPlanRiskInfo(t) : '')+
           '<div class="pm-field">'+
+            '<label class="pm-checkbox-label">'+
+              '<input type="checkbox" id="pm-f-needschanges" '+(state.pendingNeedsChanges?'checked':'')+'> '+
+              '¿Requiere ajustes o cambios?'+
+            '</label>'+
+            (state.pendingNeedsChanges ? '<textarea id="pm-f-changes-notes" placeholder="¿Qué hay que ajustar o cambiar?" style="margin-top:8px;">'+esc(state.pendingChangesNotes)+'</textarea>' : '')+
+          '</div>'+
+          '<div class="pm-field">'+
             '<label>Adjuntos</label>'+
             '<div class="pm-dropzone" id="pm-dropzone">'+
               '📎 Haz clic para adjuntar archivos'+
@@ -1137,6 +1154,7 @@
     var active = state.tasks.filter(function(t){return t.status!=='terminado';}).length;
     var overdue = state.tasks.filter(isOverdue).length;
     var timeAlerts = state.tasks.filter(function(t){ return t.status!=='terminado' && timeAlertInfo(t); }).length;
+    var needsChangesCount = state.tasks.filter(function(t){ return t.needsChanges; }).length;
 
     var html = ''+
       '<div class="pm-header">'+
@@ -1150,6 +1168,7 @@
           '<div class="pm-stat"><div class="n">'+active+'</div><div class="l">En curso</div></div>'+
           '<div class="pm-stat '+(overdue?'warn':'')+'"><div class="n">'+overdue+'</div><div class="l">Atrasadas</div></div>'+
           '<div class="pm-stat '+(timeAlerts?'warn':'')+'"><div class="n">'+timeAlerts+'</div><div class="l">Tiempo excedido</div></div>'+
+          '<div class="pm-stat '+(needsChangesCount?'warn':'')+'"><div class="n">'+needsChangesCount+'</div><div class="l">Requieren ajustes</div></div>'+
           '<button class="pm-btn ghost" id="pm-open-settings" title="Configurar umbrales de tiempo" style="align-self:flex-end;">⚙︎</button>'+
         '</div>'+
       '</div>'+
@@ -1245,6 +1264,8 @@
       state.editingTask=null;
       state.pendingAttachments = [];
       state.removedAttachmentIds = [];
+      state.pendingNeedsChanges = false;
+      state.pendingChangesNotes = '';
       state.modalOpen=true;
       render();
     });
@@ -1257,6 +1278,8 @@
           return {id:a.id, name:a.name, size:a.size, type:a.type, isNew:false};
         });
         state.removedAttachmentIds = [];
+        state.pendingNeedsChanges = !!state.editingTask.needsChanges;
+        state.pendingChangesNotes = state.editingTask.changesNotes || '';
         state.modalOpen = true;
         render();
       });
@@ -1323,6 +1346,16 @@
         showToast('Umbrales actualizados');
         render();
         saveSettings();
+      });
+    }
+
+    var needsChangesBox = document.getElementById('pm-f-needschanges');
+    if(needsChangesBox){
+      needsChangesBox.addEventListener('change', function(){
+        var notesEl = document.getElementById('pm-f-changes-notes');
+        state.pendingChangesNotes = notesEl ? notesEl.value : state.pendingChangesNotes;
+        state.pendingNeedsChanges = needsChangesBox.checked;
+        render();
       });
     }
 
@@ -1416,6 +1449,10 @@
         };
         var estDurRaw = parseInt(document.getElementById('pm-f-estdur').value, 10);
         data.estDuration = (isFinite(estDurRaw) && estDurRaw>0) ? estDurRaw : null;
+        var needsChangesEl = document.getElementById('pm-f-needschanges');
+        data.needsChanges = needsChangesEl ? needsChangesEl.checked : false;
+        var changesNotesEl = document.getElementById('pm-f-changes-notes');
+        data.changesNotes = data.needsChanges ? (changesNotesEl ? changesNotesEl.value.trim() : '') : '';
         if(data.start && data.due && data.start > data.due){
           var swapTmp = data.start; data.start = data.due; data.due = swapTmp;
           showToast('Ajustamos el orden de las fechas.');
