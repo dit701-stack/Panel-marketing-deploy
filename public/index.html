@@ -4,20 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Panel de Tareas · Marketing Digital</title>
+<link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 
 <style>
   :root{
-    --paper:#F6F3EC;
+    --paper:#F0F0F0;
     --paper-raised:#FFFFFF;
-    --ink:#1C2032;
-    --ink-soft:#5B5F73;
-    --line:rgba(28,32,50,0.10);
-    --line-strong:rgba(28,32,50,0.18);
+    --ink:#060F15;
+    --ink-soft:#5B6268;
+    --line:rgba(6,15,21,0.10);
+    --line-strong:rgba(6,15,21,0.18);
 
-    --accent:#E5197F;      /* marca / creativo */
-    --accent-ink:#7A0E45;
+    --accent:#6200FF;      /* marca Performance Squad */
+    --accent-ink:#4A00C2;
     --blue:#2D5BFF;        /* paid media */
     --teal:#00A896;        /* audiovisual */
     --amber:#F2994A;       /* automatizaciones */
@@ -59,6 +60,8 @@
     padding-bottom:22px;
     border-bottom:2px solid var(--ink);
   }
+  .pm-header-brand{ display:flex; align-items:center; gap:18px; }
+  .pm-logo{ height:46px; width:auto; flex-shrink:0; }
   .pm-header .eyebrow{
     font-family:'JetBrains Mono',monospace;
     font-size:11px;
@@ -210,7 +213,7 @@
     min-height:120px;
     transition:background .12s ease;
   }
-  .pm-col.drag-over{ background:rgba(229,25,127,0.07); box-shadow:0 0 0 2px var(--accent) inset; }
+  .pm-col.drag-over{ background:rgba(98,0,255,0.07); box-shadow:0 0 0 2px var(--accent) inset; }
   .pm-col-head{
     display:flex; align-items:center; justify-content:space-between;
     margin-bottom:12px;
@@ -316,7 +319,7 @@
   .pm-insights-head h3{ font-size:15px; margin:0; }
   .pm-insights-head .sub2{ font-size:11.5px; color:var(--ink-soft); }
   .pm-insight-callout{
-    font-size:12.5px; color:var(--accent-ink); background:rgba(229,25,127,0.06);
+    font-size:12.5px; color:var(--accent-ink); background:rgba(98,0,255,0.06);
     border-radius:9px; padding:9px 12px; margin:12px 0 18px; font-weight:600; line-height:1.5;
   }
   .pm-insight-grid{ display:grid; grid-template-columns:1fr 1fr; gap:28px; }
@@ -377,7 +380,7 @@
     text-align:center; cursor:pointer; font-size:12.5px; color:var(--ink-soft); font-weight:600;
     transition:border-color .12s ease, background .12s ease;
   }
-  .pm-dropzone:hover, .pm-dropzone.drag{ border-color:var(--accent); background:rgba(229,25,127,0.04); color:var(--accent-ink); }
+  .pm-dropzone:hover, .pm-dropzone.drag{ border-color:var(--accent); background:rgba(98,0,255,0.04); color:var(--accent-ink); }
   .pm-dropzone .hint{ font-weight:400; font-size:11px; color:var(--ink-soft); margin-top:2px; }
   .pm-attach-list{ display:flex; flex-direction:column; gap:6px; margin-top:10px; }
   .pm-attach-chip{
@@ -400,7 +403,7 @@
   .pm-alert-badge.done{ background:rgba(28,32,50,0.06); color:var(--ink-soft); }
   .pm-alert-badge.pulse{ animation:pm-pulse 1.8s ease-in-out infinite; }
   .pm-alert-badge.risk{ background:rgba(242,153,74,0.16); color:#a15a1c; }
-  .pm-alert-badge.changes{ background:rgba(229,25,127,0.12); color:var(--accent-ink); }
+  .pm-alert-badge.changes{ background:rgba(98,0,255,0.12); color:var(--accent-ink); }
   .pm-alert-badge + .pm-alert-badge{ margin-top:6px; }
   @keyframes pm-pulse{ 0%,100%{opacity:1;} 50%{opacity:0.55;} }
   .pm-gantt-bar.overrun{ box-shadow:0 0 0 2px var(--danger), 0 2px 5px rgba(0,0,0,0.12); }
@@ -1158,10 +1161,13 @@
 
     var html = ''+
       '<div class="pm-header">'+
-        '<div>'+
-          '<div class="eyebrow">Marketing Digital · Equipo</div>'+
-          '<h1>Panel de Tareas</h1>'+
-          '<div class="sub">Qué está haciendo cada persona, en qué status va cada tarea y cuánto tiempo lleva.</div>'+
+        '<div class="pm-header-brand">'+
+          '<img class="pm-logo" src="/assets/logo.png" alt="Performance Squad">'+
+          '<div>'+
+            '<div class="eyebrow">Marketing Digital · Equipo</div>'+
+            '<h1>Panel de Tareas</h1>'+
+            '<div class="sub">Qué está haciendo cada persona, en qué status va cada tarea y cuánto tiempo lleva.</div>'+
+          '</div>'+
         '</div>'+
         '<div class="pm-stats">'+
           '<div class="pm-stat"><div class="n">'+total+'</div><div class="l">Tareas totales</div></div>'+
