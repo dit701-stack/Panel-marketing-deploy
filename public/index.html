@@ -541,6 +541,7 @@
     search: '',
     modalOpen: false,
     editingTask: null, // null = new
+    modalDraft: null, // snapshot of in-progress form fields, survives re-renders while the modal is open
     toast: null,
     pendingAttachments: [], // {id, name, size, type, dataUrl?, isNew}
     removedAttachmentIds: [],
@@ -1063,7 +1064,7 @@
   function renderModal(){
     if(!state.modalOpen) return '';
     var editing = state.editingTask;
-    var t = editing || {title:'', desc:'', assignee:TEAM[0].id, status:'pendiente', priority:'media', start:'', due:''};
+    var t = state.modalDraft || editing || {title:'', desc:'', assignee:TEAM[0].id, status:'pendiente', priority:'media', start:'', due:''};
     return ''+
       '<div class="pm-overlay" data-close-modal="1">'+
         '<div class="pm-modal" onclick="event.stopPropagation()">'+
@@ -1147,7 +1148,27 @@
       '</div>';
   }
 
+  // Reads whatever the user has currently typed in the open task modal so a
+  // re-render triggered mid-edit (attaching a file, toggling "needs changes")
+  // doesn't wipe fields back to their opening values.
+  function captureModalDraft(){
+    var titleEl = document.getElementById('pm-f-title');
+    if(!titleEl) return;
+    var assigneeEl = document.getElementById('pm-f-assignee');
+    state.modalDraft = {
+      title: titleEl.value,
+      desc: document.getElementById('pm-f-desc').value,
+      assignee: assigneeEl ? assigneeEl.getAttribute('data-value') : (state.modalDraft && state.modalDraft.assignee),
+      status: document.getElementById('pm-f-status').value,
+      priority: document.getElementById('pm-f-priority').value,
+      start: document.getElementById('pm-f-start').value,
+      due: document.getElementById('pm-f-due').value,
+      estDuration: document.getElementById('pm-f-estdur').value,
+    };
+  }
+
   function render(){
+    if(state.modalOpen) captureModalDraft();
     var app = document.getElementById('pm-app');
     if(!state.loaded){
       app.innerHTML = '<div style="padding:60px;text-align:center;color:var(--ink-soft);font-size:13px;">Cargando el panel del equipo…</div>';
@@ -1268,6 +1289,7 @@
     var newBtn = document.getElementById('pm-new-task');
     if(newBtn) newBtn.addEventListener('click', function(){
       state.editingTask=null;
+      state.modalDraft = null;
       state.pendingAttachments = [];
       state.removedAttachmentIds = [];
       state.pendingNeedsChanges = false;
@@ -1280,6 +1302,7 @@
       el.addEventListener('click', function(){
         var id = el.getAttribute('data-open-task');
         state.editingTask = state.tasks.find(function(t){return t.id===id;});
+        state.modalDraft = null;
         state.pendingAttachments = (state.editingTask.attachments || []).map(function(a){
           return {id:a.id, name:a.name, size:a.size, type:a.type, isNew:false};
         });
@@ -1292,7 +1315,7 @@
     });
 
     app.querySelectorAll('[data-close-modal]').forEach(function(el){
-      el.addEventListener('click', function(){ state.modalOpen=false; state.editingTask=null; render(); });
+      el.addEventListener('click', function(){ state.modalOpen=false; state.editingTask=null; state.modalDraft=null; render(); });
     });
 
     // Drag and drop: move a task to a new status by dragging its card onto a column.
@@ -1473,7 +1496,7 @@
           state.tasks.push(data);
           showToast('Tarea creada');
         }
-        state.modalOpen=false; state.editingTask=null;
+        state.modalOpen=false; state.editingTask=null; state.modalDraft=null;
         state.pendingAttachments=[]; state.removedAttachmentIds=[];
         render();
         saveTasks();
@@ -1485,7 +1508,7 @@
       delBtn.addEventListener('click', async function(){
         var toDelete = state.editingTask;
         state.tasks = state.tasks.filter(function(t){return t.id!==toDelete.id;});
-        state.modalOpen=false; state.editingTask=null;
+        state.modalOpen=false; state.editingTask=null; state.modalDraft=null;
         state.pendingAttachments=[]; state.removedAttachmentIds=[];
         showToast('Tarea eliminada');
         render();
