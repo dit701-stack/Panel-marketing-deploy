@@ -404,6 +404,7 @@
   .pm-alert-badge.pulse{ animation:pm-pulse 1.8s ease-in-out infinite; }
   .pm-alert-badge.risk{ background:rgba(242,153,74,0.16); color:#a15a1c; }
   .pm-alert-badge.changes{ background:rgba(98,0,255,0.12); color:var(--accent-ink); }
+  .pm-alert-badge.overlap{ background:rgba(45,91,255,0.12); color:#1a3fcc; }
   .pm-alert-badge + .pm-alert-badge{ margin-top:6px; }
   @keyframes pm-pulse{ 0%,100%{opacity:1;} 50%{opacity:0.55;} }
   .pm-gantt-bar.overrun{ box-shadow:0 0 0 2px var(--danger), 0 2px 5px rgba(0,0,0,0.12); }
@@ -880,12 +881,30 @@
     return {elapsed:elapsed, threshold:threshold, finished: t.status==='terminado'};
   }
 
+  function rangesOverlap(aStart, aEnd, bStart, bEnd){
+    return aStart <= bEnd && bStart <= aEnd; // plain ISO date strings compare correctly
+  }
+
+  // Finds other active tasks for the same person whose start–due range
+  // overlaps with the given range, so we can warn about double-booking.
+  function findScheduleConflicts(assigneeId, start, due, excludeTaskId){
+    if(!assigneeId || !start || !due) return [];
+    return state.tasks.filter(function(t){
+      if(t.id === excludeTaskId) return false;
+      if(t.assignee !== assigneeId) return false;
+      if(t.status === 'terminado') return false;
+      if(!t.start || !t.due) return false;
+      return rangesOverlap(start, due, t.start, t.due);
+    });
+  }
+
   function renderCard(t){
     var p = personOf(t.assignee);
     var overdue = isOverdue(t);
     var dur = taskDurationDays(t);
     var alert = timeAlertInfo(t);
     var risk = planRisk(t);
+    var conflicts = t.status==='terminado' ? [] : findScheduleConflicts(t.assignee, t.start, t.due, t.id);
     return ''+
       '<div class="pm-card" style="--card-color:'+p.hex+'" data-open-task="'+t.id+'" draggable="true" data-drag-card="'+t.id+'">'+
         '<div class="pm-card-top">'+
@@ -896,6 +915,7 @@
         (alert ? '<div class="pm-alert-badge '+(alert.finished?'done':'pulse')+'" title="Duró '+alert.elapsed+' días, se esperaban '+alert.threshold+'">⏱ '+alert.elapsed+'d de '+alert.threshold+'d '+(alert.finished?'(cerrada tarde)':'estimados')+'</div>' : '')+
         (risk ? '<div class="pm-alert-badge risk" title="La duración estimada por el colaborador termina '+risk.overBy+' día(s) después de la fecha límite del líder">⚠ estimado supera fecha límite por '+risk.overBy+'d</div>' : '')+
         (t.needsChanges ? '<div class="pm-alert-badge changes" title="'+esc(t.changesNotes||'Requiere ajustes o cambios')+'">🔁 Requiere ajustes</div>' : '')+
+        (conflicts.length ? '<div class="pm-alert-badge overlap" title="'+p.name.split(' ')[0]+' tiene '+conflicts.length+' tarea(s) más en estas fechas">🗓️ Choca con '+conflicts.length+' tarea'+(conflicts.length===1?'':'s')+' más</div>' : '')+
         '<div class="pm-card-bottom">'+
           '<div class="pm-card-person"><div class="pm-mini-avatar" style="background:'+p.hex+'">'+p.initials+'</div>'+p.name.split(' ')[0]+'</div>'+
           '<div style="display:flex;align-items:center;gap:8px;">'+
@@ -1208,6 +1228,20 @@
       '</div>';
   }
 
+  function renderScheduleConflictInfo(t, taskId){
+    if(t.status === 'terminado') return '';
+    var conflicts = findScheduleConflicts(t.assignee, t.start, t.due, taskId);
+    if(!conflicts.length) return '';
+    var p = personOf(t.assignee);
+    var list = conflicts.map(function(c){
+      return esc(c.title)+' ('+fmtDate(c.start)+'–'+fmtDate(c.due)+')';
+    }).join(', ');
+    return ''+
+      '<div style="display:flex;align-items:flex-start;gap:8px;background:rgba(45,91,255,0.08);border-radius:9px;padding:9px 12px;margin:-4px 0 14px;font-size:12px;color:#1a3fcc;font-weight:600;line-height:1.5;">'+
+        '🗓️ '+p.name.split(' ')[0]+' ya tiene '+conflicts.length+' tarea'+(conflicts.length===1?'':'s')+' en fechas que se cruzan con esta: '+list+'.'+
+      '</div>';
+  }
+
   function renderComments(t){
     var comments = t.comments || [];
     var list = comments.length ? comments.map(function(c){
@@ -1278,6 +1312,7 @@
           (editing ? renderRealDatesInfo(t) : '')+
           (editing ? renderExecTimeInfo(t) : '')+
           (editing ? renderPlanRiskInfo(t) : '')+
+          (editing ? renderScheduleConflictInfo(t, editing.id) : '')+
           '<div class="pm-field">'+
             '<label class="pm-checkbox-label">'+
               '<input type="checkbox" id="pm-f-needschanges" '+(state.pendingNeedsChanges?'checked':'')+'> '+
