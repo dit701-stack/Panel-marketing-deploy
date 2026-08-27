@@ -160,6 +160,17 @@
     gap:12px;
     margin-bottom:18px;
   }
+  .pm-bulk-bar{
+    display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    background:var(--ink); color:#fff; border-radius:12px; padding:10px 16px; margin-bottom:16px;
+  }
+  .pm-bulk-count{ font-size:13px; font-weight:700; }
+  .pm-bulk-actions{ display:flex; align-items:center; gap:8px; }
+  .pm-bulk-actions select{
+    border:1px solid rgba(255,255,255,0.3); background:rgba(255,255,255,0.08); color:#fff;
+    border-radius:8px; padding:7px 10px; font-family:'Inter',sans-serif; font-size:12.5px; font-weight:600;
+  }
+  .pm-bulk-actions .pm-btn.ghost{ border-color:rgba(255,255,255,0.35); color:#fff; }
   .pm-filters{ display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
   .pm-chip{
     border:1px solid var(--line-strong);
@@ -246,6 +257,12 @@
   }
   .pm-card:hover{ box-shadow:0 8px 20px rgba(28,32,50,0.10); transform:translateY(-1px); }
   .pm-card.dragging{ opacity:0.4; }
+  .pm-card.selected{ box-shadow:0 0 0 2px var(--accent) inset; }
+  .pm-card-check{
+    width:18px; height:18px; border-radius:5px; border:1.5px solid var(--line-strong); flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff;
+  }
+  .pm-card-check.on{ background:var(--accent); border-color:var(--accent); }
   .pm-card{ cursor:grab; }
   .pm-card:active{ cursor:grabbing; }
   .pm-card-top{ display:flex; justify-content:space-between; gap:8px; margin-bottom:6px;}
@@ -395,8 +412,9 @@
   .pm-attach-chip .rm:hover{ color:var(--danger); }
   .pm-card-attach{ display:flex; align-items:center; gap:4px; font-size:10.5px; color:var(--ink-soft); font-weight:600; }
 
+  .pm-alert-row{ display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px; }
   .pm-alert-badge{
-    display:flex; align-items:center; gap:3px; font-size:10px; font-weight:700;
+    display:inline-flex; align-items:center; gap:3px; font-size:10px; font-weight:700;
     padding:2px 7px; border-radius:100px; background:rgba(228,72,45,0.12); color:var(--danger);
     white-space:nowrap;
   }
@@ -406,7 +424,6 @@
   .pm-alert-badge.changes{ background:rgba(98,0,255,0.12); color:var(--accent-ink); }
   .pm-alert-badge.overlap{ background:rgba(45,91,255,0.12); color:#1a3fcc; }
   .pm-alert-badge.comments{ background:rgba(6,15,21,0.07); color:var(--ink); }
-  .pm-alert-badge + .pm-alert-badge{ margin-top:6px; }
   @keyframes pm-pulse{ 0%,100%{opacity:1;} 50%{opacity:0.55;} }
   .pm-gantt-bar.overrun{ box-shadow:0 0 0 2px var(--danger), 0 2px 5px rgba(0,0,0,0.12); }
   .pm-matrix-chip.overrun{ border-left-color:var(--danger) !important; }
@@ -494,6 +511,14 @@
     padding:9px 12px; cursor:pointer; transition:border-color .12s ease, background .12s ease;
   }
   .pm-identity-opt:hover{ border-color:var(--accent); background:rgba(98,0,255,0.04); }
+
+  /* ---------- activity feed ---------- */
+  .pm-activity-list{ display:flex; flex-direction:column; gap:2px; max-height:60vh; overflow-y:auto; margin:0 -8px; }
+  .pm-activity-item{ display:flex; gap:10px; padding:9px 8px; border-radius:9px; cursor:pointer; }
+  .pm-activity-item:hover{ background:rgba(6,15,21,0.05); }
+  .pm-activity-icon{ flex-shrink:0; font-size:14px; margin-top:1px; }
+  .pm-activity-line{ font-size:12.5px; line-height:1.4; }
+  .pm-activity-meta{ font-size:10.5px; color:var(--ink-soft); margin-top:2px; }
 
   /* ---------- comments ---------- */
   .pm-comment-list{ display:flex; flex-direction:column; gap:8px; max-height:220px; overflow-y:auto; margin-bottom:10px; }
@@ -624,6 +649,9 @@
     pendingChangesNotes: '',
     currentUser: null, // id of the TEAM member using this browser (see "Soy..." picker)
     identityPickerOpen: false,
+    selectMode: false, // bulk-select mode, board view only
+    selectedIds: [],
+    activityPanelOpen: false,
   };
 
   function uid(){ return 't' + Math.random().toString(36).slice(2,10); }
@@ -906,18 +934,22 @@
     var alert = timeAlertInfo(t);
     var risk = planRisk(t);
     var conflicts = t.status==='terminado' ? [] : findScheduleConflicts(t.assignee, t.start, t.due, t.id);
+    var badges = ''+
+      (alert ? '<div class="pm-alert-badge '+(alert.finished?'done':'pulse')+'" title="Duró '+alert.elapsed+' días, se esperaban '+alert.threshold+(alert.finished?' (cerrada tarde)':'')+'">⏱ '+alert.elapsed+'d/'+alert.threshold+'d</div>' : '')+
+      (risk ? '<div class="pm-alert-badge risk" title="La duración estimada por el colaborador termina '+risk.overBy+' día(s) después de la fecha límite del líder">⚠ +'+risk.overBy+'d</div>' : '')+
+      (t.needsChanges ? '<div class="pm-alert-badge changes" title="'+esc(t.changesNotes||'Requiere ajustes o cambios')+'">🔁 Ajustes</div>' : '')+
+      (conflicts.length ? '<div class="pm-alert-badge overlap" title="'+p.name.split(' ')[0]+' tiene '+conflicts.length+' tarea(s) más en estas fechas">🗓️ '+conflicts.length+'</div>' : '')+
+      (t.comments && t.comments.length ? '<div class="pm-alert-badge comments" title="'+esc((t.comments[t.comments.length-1]||{}).text||'')+'">💬 '+t.comments.length+'</div>' : '');
+    var selected = state.selectMode && state.selectedIds.indexOf(t.id)!==-1;
     return ''+
-      '<div class="pm-card" style="--card-color:'+p.hex+'" data-open-task="'+t.id+'" draggable="true" data-drag-card="'+t.id+'">'+
+      '<div class="pm-card '+(selected?'selected':'')+'" style="--card-color:'+p.hex+'" data-open-task="'+t.id+'" draggable="'+(state.selectMode?'false':'true')+'" data-drag-card="'+t.id+'">'+
         '<div class="pm-card-top">'+
+          (state.selectMode ? '<div class="pm-card-check '+(selected?'on':'')+'">'+(selected?'✓':'')+'</div>' : '')+
           '<div class="pm-card-title">'+esc(t.title)+'</div>'+
           '<div class="pm-prio '+t.priority+'">'+t.priority+'</div>'+
         '</div>'+
         (t.desc ? '<div class="pm-card-desc">'+esc(t.desc)+'</div>' : '')+
-        (alert ? '<div class="pm-alert-badge '+(alert.finished?'done':'pulse')+'" title="Duró '+alert.elapsed+' días, se esperaban '+alert.threshold+'">⏱ '+alert.elapsed+'d de '+alert.threshold+'d '+(alert.finished?'(cerrada tarde)':'estimados')+'</div>' : '')+
-        (risk ? '<div class="pm-alert-badge risk" title="La duración estimada por el colaborador termina '+risk.overBy+' día(s) después de la fecha límite del líder">⚠ estimado supera fecha límite por '+risk.overBy+'d</div>' : '')+
-        (t.needsChanges ? '<div class="pm-alert-badge changes" title="'+esc(t.changesNotes||'Requiere ajustes o cambios')+'">🔁 Requiere ajustes</div>' : '')+
-        (conflicts.length ? '<div class="pm-alert-badge overlap" title="'+p.name.split(' ')[0]+' tiene '+conflicts.length+' tarea(s) más en estas fechas">🗓️ Choca con '+conflicts.length+' tarea'+(conflicts.length===1?'':'s')+' más</div>' : '')+
-        (t.comments && t.comments.length ? '<div class="pm-alert-badge comments" title="'+esc((t.comments[t.comments.length-1]||{}).text||'')+'">💬 '+t.comments.length+' comentario'+(t.comments.length===1?'':'s')+'</div>' : '')+
+        (badges ? '<div class="pm-alert-row">'+badges+'</div>' : '')+
         '<div class="pm-card-bottom">'+
           '<div class="pm-card-person"><div class="pm-mini-avatar" style="background:'+p.hex+'">'+p.initials+'</div>'+p.name.split(' ')[0]+'</div>'+
           '<div style="display:flex;align-items:center;gap:8px;">'+
@@ -955,6 +987,23 @@
           '<div class="pm-track">'+bars+'</div>'+
         '</div>';
     }).join('');
+  }
+
+  function renderBulkBar(){
+    if(!state.selectMode) return '';
+    var n = state.selectedIds.length;
+    return ''+
+      '<div class="pm-bulk-bar">'+
+        '<div class="pm-bulk-count">'+n+' tarea'+(n===1?'':'s')+' seleccionada'+(n===1?'':'s')+'</div>'+
+        '<div class="pm-bulk-actions">'+
+          '<select id="pm-bulk-status" '+(n===0?'disabled':'')+'>'+
+            '<option value="">Mover a…</option>'+
+            STATUSES.map(function(s){return '<option value="'+s.id+'">'+s.label+'</option>';}).join('')+
+          '</select>'+
+          '<button class="pm-btn ghost" id="pm-bulk-delete" '+(n===0?'disabled':'')+'>Eliminar</button>'+
+          '<button class="pm-btn ghost" id="pm-bulk-cancel">Cancelar</button>'+
+        '</div>'+
+      '</div>';
   }
 
   function renderBoard(){
@@ -1391,6 +1440,45 @@
       '</div>';
   }
 
+  // Flattens every task's history entries and comments into one
+  // chronological feed so the team can see "what happened" without opening
+  // tasks one by one.
+  function allActivity(){
+    var items = [];
+    state.tasks.forEach(function(t){
+      (t.history||[]).forEach(function(h){
+        items.push({ts:h.ts, actor:h.actor, detail:h.detail, taskId:t.id, taskTitle:t.title, icon:'📝'});
+      });
+      (t.comments||[]).forEach(function(c){
+        items.push({ts:c.ts, actor:c.author, detail:'comentó: "'+c.text+'"', taskId:t.id, taskTitle:t.title, icon:'💬'});
+      });
+    });
+    items.sort(function(a,b){ return new Date(b.ts) - new Date(a.ts); });
+    return items.slice(0, 25);
+  }
+
+  function renderActivityPanel(){
+    if(!state.activityPanelOpen) return '';
+    var items = allActivity();
+    var list = items.length ? items.map(function(it){
+      return ''+
+        '<div class="pm-activity-item" data-open-task-from-activity="'+it.taskId+'">'+
+          '<div class="pm-activity-icon">'+it.icon+'</div>'+
+          '<div class="pm-activity-body">'+
+            '<div class="pm-activity-line"><strong>'+esc(it.actor)+'</strong> '+esc(it.detail)+'</div>'+
+            '<div class="pm-activity-meta">'+esc(it.taskTitle)+' · '+fmtDateTime(it.ts)+'</div>'+
+          '</div>'+
+        '</div>';
+    }).join('') : '<div class="pm-hist-empty">Sin actividad todavía.</div>';
+    return ''+
+      '<div class="pm-overlay" data-close-activity="1">'+
+        '<div class="pm-modal" style="max-width:440px;" onclick="event.stopPropagation()">'+
+          '<h3>Actividad reciente</h3>'+
+          '<div class="pm-activity-list">'+list+'</div>'+
+        '</div>'+
+      '</div>';
+  }
+
   // Reads whatever the user has currently typed in the open task modal so a
   // re-render triggered mid-edit (attaching a file, toggling "needs changes")
   // doesn't wipe fields back to their opening values.
@@ -1440,6 +1528,7 @@
           '<div class="pm-stat '+(overdue?'warn':'')+'"><div class="n">'+overdue+'</div><div class="l">Atrasadas</div></div>'+
           '<div class="pm-stat '+(timeAlerts?'warn':'')+'"><div class="n">'+timeAlerts+'</div><div class="l">Tiempo excedido</div></div>'+
           '<div class="pm-stat '+(needsChangesCount?'warn':'')+'"><div class="n">'+needsChangesCount+'</div><div class="l">Requieren ajustes</div></div>'+
+          '<button class="pm-btn ghost" id="pm-open-activity" title="Actividad reciente" style="align-self:flex-end;">🕓</button>'+
           '<button class="pm-btn ghost" id="pm-open-settings" title="Configurar umbrales de tiempo" style="align-self:flex-end;">⚙︎</button>'+
         '</div>'+
       '</div>'+
@@ -1467,14 +1556,17 @@
             '<button class="'+(state.view==='matrix'?'on':'')+'" data-view="matrix">Matriz</button>'+
             '<button class="'+(state.view==='calendar'?'on':'')+'" data-view="calendar">Calendario</button>'+
           '</div>'+
+          (state.view==='board' ? '<button class="pm-btn ghost" id="pm-toggle-select">'+(state.selectMode?'Cancelar selección':'☑ Seleccionar')+'</button>' : '')+
           '<button class="pm-btn primary" id="pm-new-task">+ Nueva tarea</button>'+
         '</div>'+
       '</div>'+
 
+      renderBulkBar()+
       (state.view==='board' ? renderBoard() : state.view==='matrix' ? renderMatrix() : renderCalendar())+
       renderModal()+
       renderSettingsModal()+
       renderIdentityPicker()+
+      renderActivityPanel()+
       (state.toast ? (
         '<div class="pm-toast">'+esc(state.toast)+
           (state.toastActionLabel ? '<button type="button" class="pm-toast-action" id="pm-toast-action">'+esc(state.toastActionLabel)+'</button>' : '')+
@@ -1515,6 +1607,80 @@
     app.querySelectorAll('[data-view]').forEach(function(el){
       el.addEventListener('click', function(){ state.view = el.getAttribute('data-view'); render(); });
     });
+
+    var toggleSelect = document.getElementById('pm-toggle-select');
+    if(toggleSelect){
+      toggleSelect.addEventListener('click', function(){
+        state.selectMode = !state.selectMode;
+        state.selectedIds = [];
+        render();
+      });
+    }
+
+    var bulkStatus = document.getElementById('pm-bulk-status');
+    if(bulkStatus){
+      bulkStatus.addEventListener('change', function(){
+        var newStatus = bulkStatus.value;
+        if(!newStatus || !state.selectedIds.length) return;
+        var label = statusOf(newStatus).label;
+        state.selectedIds.forEach(function(id){
+          var task = state.tasks.find(function(t){ return t.id===id; });
+          if(!task || task.status===newStatus) return;
+          var fromLabel = statusOf(task.status).label;
+          stampStatusTimestamps(task, newStatus);
+          task.status = newStatus;
+          task.history = task.history || [];
+          task.history.push({ts:new Date().toISOString(), actor:currentUserName(), detail:'Movió de "'+fromLabel+'" a "'+label+'" (acción en lote)'});
+        });
+        showToast(state.selectedIds.length+' tarea(s) movidas a "'+label+'"');
+        state.selectMode = false;
+        state.selectedIds = [];
+        render();
+        saveTasks();
+      });
+    }
+
+    var bulkDelete = document.getElementById('pm-bulk-delete');
+    if(bulkDelete){
+      bulkDelete.addEventListener('click', function(){
+        var ids = state.selectedIds.slice();
+        if(!ids.length) return;
+        var removed = state.tasks.filter(function(t){ return ids.indexOf(t.id)!==-1; });
+        state.tasks = state.tasks.filter(function(t){ return ids.indexOf(t.id)===-1; });
+        state.selectMode = false;
+        state.selectedIds = [];
+        saveTasks();
+
+        var commitTimeoutId = setTimeout(function(){
+          removed.forEach(function(t){
+            (t.attachments||[]).forEach(function(a){
+              fetch('/api/attachments/' + encodeURIComponent(a.id), { method:'DELETE' }).catch(function(){});
+            });
+          });
+        }, 6000);
+
+        showToast(removed.length+' tarea(s) eliminadas', {
+          actionLabel: 'Deshacer',
+          duration: 6000,
+          onAction: function(){
+            clearTimeout(commitTimeoutId);
+            state.tasks = state.tasks.concat(removed);
+            saveTasks();
+            render();
+          }
+        });
+        render();
+      });
+    }
+
+    var bulkCancel = document.getElementById('pm-bulk-cancel');
+    if(bulkCancel){
+      bulkCancel.addEventListener('click', function(){
+        state.selectMode = false;
+        state.selectedIds = [];
+        render();
+      });
+    }
 
     var whoamiToggle = document.getElementById('pm-whoami-toggle');
     if(whoamiToggle) whoamiToggle.addEventListener('click', function(){ state.identityPickerOpen = true; render(); });
@@ -1576,6 +1742,12 @@
     app.querySelectorAll('[data-open-task]').forEach(function(el){
       el.addEventListener('click', function(){
         var id = el.getAttribute('data-open-task');
+        if(state.selectMode && el.classList.contains('pm-card')){
+          var idx = state.selectedIds.indexOf(id);
+          if(idx===-1) state.selectedIds.push(id); else state.selectedIds.splice(idx,1);
+          render();
+          return;
+        }
         state.editingTask = state.tasks.find(function(t){return t.id===id;});
         state.modalDraft = null;
         state.pendingAttachments = (state.editingTask.attachments || []).map(function(a){
@@ -1668,6 +1840,32 @@
         hoverCardId = null;
         render();
         saveTasks();
+      });
+    });
+
+    var openActivity = document.getElementById('pm-open-activity');
+    if(openActivity) openActivity.addEventListener('click', function(){ state.activityPanelOpen = true; render(); });
+
+    app.querySelectorAll('[data-close-activity]').forEach(function(el){
+      el.addEventListener('click', function(){ state.activityPanelOpen = false; render(); });
+    });
+
+    app.querySelectorAll('[data-open-task-from-activity]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var id = el.getAttribute('data-open-task-from-activity');
+        var task = state.tasks.find(function(t){ return t.id===id; });
+        if(!task) return;
+        state.activityPanelOpen = false;
+        state.editingTask = task;
+        state.modalDraft = null;
+        state.pendingAttachments = (task.attachments || []).map(function(a){
+          return {id:a.id, name:a.name, size:a.size, type:a.type, isNew:false};
+        });
+        state.removedAttachmentIds = [];
+        state.pendingNeedsChanges = !!task.needsChanges;
+        state.pendingChangesNotes = task.changesNotes || '';
+        state.modalOpen = true;
+        render();
       });
     });
 
